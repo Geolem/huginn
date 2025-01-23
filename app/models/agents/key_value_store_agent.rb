@@ -6,7 +6,7 @@ module Agents
     cannot_be_scheduled!
     cannot_create_events!
 
-    description <<-MD
+    description <<~MD
       The Key-Value Store Agent is a data storage that keeps an associative array in its memory.  It receives events to store values and provides the data to other agents as an object via Liquid Templating.
 
       Liquid templates specified in the `key` and `value` options are evaluated for each received event to be stored in the memory.
@@ -40,6 +40,7 @@ module Agents
 
       - Keys are always stringified as mandated by the JSON format.
       - Values are stringified by default.  Use the `as_object` filter to store non-string values.
+      - If the key is evaluated to an empty string, the event is ignored.
       - If the value is evaluated to either `null` or empty (`""`, `[]`, `{}`) the key gets deleted.
       - In the `value` template, the existing value (if any) can be accessed via the variable `_value_`.
       - In the `key` and `value` templates, the whole event payload can be accessed via the variable `_event_`.
@@ -99,13 +100,19 @@ module Agents
             interpolation_context['_event_'] = event.payload
 
             key = interpolate_options(options)['key'].to_s
+            next if key.empty?
 
             storage = memory
             interpolation_context['_value_'] = storage.delete(key)
 
-            storage[key] = interpolate_options(options)['value']
+            value = interpolate_options(options)['value']
 
-            storage.shift while storage.size > max_keys
+            if value.nil? || value.try(:empty?)
+              storage.delete(key)
+            else
+              storage[key] = value
+              storage.shift while storage.size > max_keys
+            end
 
             update!(memory: storage)
           end
